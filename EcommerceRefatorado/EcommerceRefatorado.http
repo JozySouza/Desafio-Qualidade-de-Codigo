@@ -1,0 +1,6 @@
+@EcommerceRefatorado_HostAddress = http://localhost:5259
+
+GET {{EcommerceRefatorado_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
