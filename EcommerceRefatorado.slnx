@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="EcommerceRefatorado.Tests/EcommerceRefatorado.Tests.csproj" />
   <Project Path="EcommerceRefatorado/EcommerceRefatorado.csproj" />
   <Project Path="SquadCli/SquadCli.csproj" />
 </Solution>
