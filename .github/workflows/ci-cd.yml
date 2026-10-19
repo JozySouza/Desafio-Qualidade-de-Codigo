@@ -1,0 +1,82 @@
+name: CI-CD
+
+on:
+  push:
+  pull_request:
+
+# Cancela execuções antigas da mesma branch quando um novo push chega
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  SOLUTION: EcommerceRefatorado.slnx
+  API_PROJECT: EcommerceRefatorado/EcommerceRefatorado.csproj
+
+jobs:
+  # ---------------------------------------------------------------
+  # CI: roda em todo push e em todo Pull Request
+  # ---------------------------------------------------------------
+  build-e-testes:
+    name: build-e-testes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restaurar pacotes
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: Compilar
+        run: dotnet build ${{ env.SOLUTION }} --configuration Release --no-restore
+
+      - name: Rodar os testes
+        run: >
+          dotnet test ${{ env.SOLUTION }}
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=resultado-testes.trx"
+          --results-directory ./TestResults
+          --collect:"XPlat Code Coverage"
+
+      - name: Guardar resultado dos testes e cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-testes
+          path: TestResults/
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------
+  # CD: só em push na main e só se o CI passou
+  # ---------------------------------------------------------------
+  publicar:
+    name: publicar-api
+    needs: build-e-testes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Gerar o pacote da API
+        run: dotnet publish ${{ env.API_PROJECT }} --configuration Release --output ./publish
+
+      - name: Guardar o pacote para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecommerce-api
+          path: publish/
+          if-no-files-found: error
