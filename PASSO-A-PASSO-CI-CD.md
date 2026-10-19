@@ -7,51 +7,6 @@
 | **CI** (`build-e-testes`) | Todo push e todo Pull Request | `dotnet restore`, `dotnet build`, `dotnet test`. Salva resultados (.trx) e cobertura como artefato `resultado-testes`. |
 | **CD** (`publicar-api`) | Só em push na `main` e só se o CI passou | `dotnet publish` da API e salva o pacote como artefato `ecommerce-api`. |
 
-## Onde colocar cada arquivo
-
-Extraia o zip na **raiz do repositório** (a pasta onde está o `.git`, ao lado de `EcommerceRefatorado/` e `SquadCli/`):
-
-```text
-.
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml                  <- NOVO (o pipeline)
-├── EcommerceRefatorado.Tests/         <- NOVO (projeto xUnit)
-│   ├── EcommerceRefatorado.Tests.csproj
-│   └── SmokeTests.cs
-├── EcommerceRefatorado.slnx           <- SUBSTITUI o atual (só adiciona o projeto de testes)
-├── EcommerceRefatorado/               (sem mudanças)
-├── SquadCli/                          (sem mudanças)
-└── PASSO-A-PASSO-CI-CD.md             <- este guia (pode apagar depois)
-```
-
-A API e a CLI não foram alteradas. O `.gitignore` de vocês já ignora `bin/` e `obj/`, então não precisa trocar.
-
-## Passo a passo
-
-1. **Crie uma branch** (ex.: `feature/ci-cd`) para não mexer direto na `main`:
-   ```bash
-   git checkout -b feature/ci-cd
-   ```
-2. **Extraia o zip** na raiz do repositório e aceite substituir o `EcommerceRefatorado.slnx`.
-3. **Teste localmente** na raiz:
-   ```bash
-   dotnet restore EcommerceRefatorado.slnx
-   dotnet build EcommerceRefatorado.slnx
-   dotnet test EcommerceRefatorado.slnx
-   ```
-   Deve aparecer "Passed: 4" (1 teste + 3 casos do `Theory`).
-   O comando `squad test` também funciona: os testes têm `[Trait("Category", "Unit")]`.
-4. **Commit e push**:
-   ```bash
-   git add .github EcommerceRefatorado.Tests EcommerceRefatorado.slnx PASSO-A-PASSO-CI-CD.md
-   git commit -m "ci: adiciona pipeline CI/CD e projeto de testes xUnit"
-   git push -u origin feature/ci-cd
-   ```
-5. **Veja rodando**: no GitHub, aba **Actions** → workflow **CI-CD**. O push da branch já dispara o job `build-e-testes`.
-6. **Abra o Pull Request** para a `main`. O check `build-e-testes` aparece no PR.
-7. **Depois do merge na `main`**, o job `publicar-api` roda e, ao terminar, o pacote fica na página da execução, em **Artifacts → ecommerce-api**.
-
 ## Recomendado para a equipe
 
 Em **Settings → Branches → Add branch ruleset** (ou *Branch protection rule*) para a `main`:
