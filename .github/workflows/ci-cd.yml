@@ -13,12 +13,10 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   SOLUTION: EcommerceRefatorado.slnx
-  API_PROJECT: EcommerceRefatorado/EcommerceRefatorado.csproj
+  API_PROJECT: EcommerceRefatorado.Api/EcommerceRefatorado.csproj
 
 jobs:
-  # ---------------------------------------------------------------
   # CI: roda em todo push e em todo Pull Request
-  # ---------------------------------------------------------------
   build-e-testes:
     name: build-e-testes
     runs-on: ubuntu-latest
@@ -54,9 +52,7 @@ jobs:
           path: TestResults/
           if-no-files-found: warn
 
-  # ---------------------------------------------------------------
   # CD: só em push na main e só se o CI passou
-  # ---------------------------------------------------------------
   publicar:
     name: publicar-api
     needs: build-e-testes
