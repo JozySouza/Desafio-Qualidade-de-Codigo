@@ -2,15 +2,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EcommerceRefatorado;
 
+// Infrastructure/Data/AppDbContext.cs
 public class AppDbContext : DbContext
 {
-    public DbSet<Produto> Produtos { get; set; }
-    public DbSet<Pedido> Pedidos { get; set; }
-    public DbSet<ItemPedido> ItensPedido { get; set; }
+    
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    public DbSet<Produto> Produtos => Set<Produto>();
+    public DbSet<Pedido> Pedidos => Set<Pedido>();
+    public DbSet<ItemPedido> ItensPedido => Set<ItemPedido>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // connection string fixa no codigo, ignorando appsettings.json e injecao de dependencia
-        optionsBuilder.UseSqlite("Data Source=ecommerce.db");
+        modelBuilder.Entity<Pedido>(entity =>
+        {
+            entity.Property(p => p.Status)
+                .HasConversion<string>();
+            entity.Property(p => p.FormaPagamento)
+                .HasConversion<string>()
+                .HasDefaultValue(FormaPagamento.NaoInformado);
+        });
     }
 }

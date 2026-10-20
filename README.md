@@ -1,84 +1,125 @@
 # EcommerceRefatorado
 
-Projeto em andamento para refatorar uma aplicação de e-commerce em .NET, com uma API e uma CLI de apoio à squad. Até aqui, foram criados a solução, os projetos iniciais e a estrutura de pastas; os fluxos de negócio ainda não estão implementados nem conectados à API.
+API de e-commerce em ASP.NET Core/.NET 10, com persistência SQLite, documentação Swagger e uma CLI de apoio à squad.
 
 ## Estado atual
 
-| Área | O que existe hoje |
-| --- | --- |
-| API | Projeto ASP.NET Core em .NET 10, ainda com o endpoint de exemplo `/weatherforecast` do template. |
-| Estrutura da aplicação | Pastas para API, aplicação, domínio e infraestrutura, com arquivos planejados para controllers, serviços, DTOs, interfaces, entidades, gateways e repositórios. A maior parte desses arquivos está vazia. |
-| Persistência | Há um arquivo inicial `AppDbContext.cs` com configuração SQLite fixa, mas ele está fora da pasta do projeto web e não está integrado à inicialização da API. |
-| CLI | Projeto de console `SquadCli` com comandos `setup`, `tasks`, `start` e `test`. |
-| Testes | Não há projeto ou arquivos de teste no repositório neste momento. |
+- A API expõe operações CRUD para produtos.
+- O Swagger UI está habilitado em ambiente de desenvolvimento.
+- `AppDbContext` configura as tabelas de produtos, pedidos e itens de pedido.
+- A inicialização cria o esquema SQLite e insere quatro produtos de exemplo quando a tabela `Produtos` está vazia.
+- Os repositórios assíncronos de produtos e pedidos usam Entity Framework Core e estão registrados na injeção de dependências.
+- `StatusPedido` e `FormaPagamento` são persistidos como texto.
+- Os repositórios de pedidos estão implementados, mas ainda não há endpoints de pedidos na API.
+- A CLI contém comandos de apoio em diferentes níveis de implementação; consulte a seção [CLI da squad](#cli-da-squad).
 
 ## Estrutura
 
 ```text
 .
 ├── Api/
-│   ├── Controllers/
-│   └── Middlewares/
+│   └── Controllers/
 ├── Application/
 │   ├── DTOs/
-│   ├── Interfaces/
-│   └── Services/
+│   └── Interfaces/
 ├── Domain/
-│   ├── Descontos/
 │   ├── Entities/
-│   ├── Enums/
-│   └── Exceptions/
+│   └── Enums/
 ├── Infrastructure/
 │   ├── Data/
-│   ├── Gateways/
 │   └── Repositories/
-├── EcommerceRefatorado/
-│   └── Projeto ASP.NET Core
+├── EcommerceRefatorado.Api/
+│   └── Projeto ASP.NET Core e arquivo .csproj
 ├── SquadCli/
 │   └── CLI da squad
 └── EcommerceRefatorado.slnx
 ```
 
-As pastas `Api`, `Application`, `Domain` e `Infrastructure` representam a organização planejada para a solução, mas ainda não fazem parte do projeto web compilado. A API que está configurada na solução fica em `EcommerceRefatorado/`.
+As pastas `Api`, `Application`, `Domain` e `Infrastructure` ficam na raiz do repositório. O projeto web em `EcommerceRefatorado.Api/` as inclui como arquivos vinculados no `EcommerceRefatorado.csproj`; por isso, aparecem dentro do projeto no Solution Explorer sem serem movidas fisicamente.
 
 ## Requisitos
 
 - .NET SDK 10
-- Git, para usar o comando `squad start`
+- Git, para usar o comando `start` da CLI
 
 ## Compilar e executar
 
 Na raiz do repositório:
 
 ```powershell
-dotnet restore EcommerceRefatorado.slnx
-dotnet build EcommerceRefatorado.slnx
-dotnet run --project EcommerceRefatorado\EcommerceRefatorado.csproj
+dotnet restore .\EcommerceRefatorado.slnx
+dotnet build .\EcommerceRefatorado.slnx
+dotnet run --project .\EcommerceRefatorado.Api\EcommerceRefatorado.csproj
 ```
 
-No perfil HTTP, a API usa `http://localhost:5259`. O endpoint atualmente disponível é:
+No perfil HTTP, a API usa `http://localhost:5259`. Em ambiente de desenvolvimento:
 
-```http
-GET http://localhost:5259/weatherforecast
+- Swagger UI: `http://localhost:5259/swagger`
+- Documento OpenAPI: `http://localhost:5259/swagger/v1/swagger.json`
+
+Se a porta 5259 já estiver ocupada, informe outra ao iniciar a API:
+
+```powershell
+dotnet run --project .\EcommerceRefatorado.Api\EcommerceRefatorado.csproj --urls http://localhost:5261
 ```
 
-Em ambiente de desenvolvimento, o documento OpenAPI também é disponibilizado em `/openapi/v1.json`.
+## Produtos
+
+As rotas disponíveis são:
+
+| Método | Rota | Resultado |
+| --- | --- | --- |
+| `GET` | `/api/Produtos` | Lista os produtos. |
+| `GET` | `/api/Produtos/{id}` | Retorna um produto ou `404`. |
+| `POST` | `/api/Produtos` | Cria um produto e retorna `201`. |
+| `PUT` | `/api/Produtos/{id}` | Atualiza um produto; retorna `204` ou `404`. |
+| `DELETE` | `/api/Produtos/{id}` | Exclui um produto; retorna `204` ou `404`. |
+
+Corpo esperado por `POST` e `PUT`:
+
+```json
+{
+  "nome": "Camiseta",
+  "descricao": "Camiseta basica",
+  "preco": 49.90,
+  "estoque": 100
+}
+```
+
+Os campos são validados: nome obrigatório (até 150 caracteres), descrição obrigatória (até 500 caracteres), preço maior que zero e estoque não negativo.
+
+## Banco de dados
+
+A connection string `Default` está em `EcommerceRefatorado.Api/appsettings.json` e aponta para `ecommerce.db`. O banco é criado na inicialização da API; com a configuração atual, o arquivo fica no diretório de conteúdo do projeto web (`EcommerceRefatorado.Api/`).
+
+O seeder insere quatro produtos (`Camiseta`, `Tenis`, `Bone` e `Mochila`) somente quando a tabela `Produtos` está vazia. Se já houver produtos, os dados existentes são mantidos e o seeder não substitui nem completa o catálogo.
+
+O seeder também adiciona as colunas `Descricao` em `Produtos` e `FormaPagamento` em `Pedidos` quando elas ainda não existem, preservando os registros existentes. O projeto usa `EnsureCreated`; migrations do EF Core ainda não estão configuradas.
+
+## Repositórios e domínio
+
+`IProdutoRepository` e `IPedidoRepository` definem operações assíncronas de consulta, inclusão, atualização e exclusão. As implementações `ProdutoRepository` e `PedidoRepository` ficam em `Infrastructure/Repositories`. A consulta de pedidos inclui os itens e os produtos relacionados.
+
+Os enums persistidos como texto são:
+
+- `StatusPedido`: `Pendente`, `Pago`, `Enviado` e `Cancelado`.
+- `FormaPagamento`: `NaoInformado`, `Pix`, `CartaoCredito`, `CartaoDebito` e `Boleto`.
 
 ## CLI da squad
 
-Execute os comandos a partir da raiz do repositório:
+Execute a partir da raiz:
 
 ```powershell
-dotnet run --project SquadCli\SquadCli.csproj -- --help
+dotnet run --project .\SquadCli\SquadCli.csproj -- --help
 ```
 
-Comandos disponíveis:
+Comandos atuais:
 
-- `setup`: exibe mensagens de configuração; ainda não restaura dependências nem configura ou popula um banco de dados.
-- `tasks [--me]`: exibe uma tabela com áreas e responsáveis fictícios. A opção `--me` ainda não filtra as tarefas.
-- `start <id>`: tenta criar e selecionar a branch `feature/issue-<id>` usando Git no diretório atual.
-- `test`: executa `dotnet test --filter Category=Unit`; ainda não há testes no repositório.
+- `setup`: exibe mensagens de configuração; não restaura dependências nem configura o banco.
+- `tasks [--me]`: exibe uma tabela de tarefas fictícias; `--me` ainda não filtra a lista.
+- `start <id>`: tenta criar a branch `feature/issue-<id>` usando Git no diretório atual.
+- `test`: executa `dotnet test --filter Category=Unit`; não há testes automatizados implementados atualmente.
 
 ## Planejamento registrado
 
-O script `criar_issues.sh` contém comandos `gh issue create` para registrar etapas de planejamento e frentes de trabalho de infraestrutura, produtos/estoque, pedidos/descontos e integrações/testes. O script depende do GitHub CLI (`gh`) autenticado e ainda não representa funcionalidades já concluídas.
+O script `criar_issues.sh` contém comandos `gh issue create` para registrar etapas de planejamento. Ele depende do GitHub CLI (`gh`) autenticado.
