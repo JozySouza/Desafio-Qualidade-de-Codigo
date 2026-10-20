@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Api\**\*.cs" Link="Api\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Application\**\*.cs" Link="Application\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Domain\**\*.cs" Link="Domain\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Infrastructure\**\*.cs" Link="Infrastructure\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
