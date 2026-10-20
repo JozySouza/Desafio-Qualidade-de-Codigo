@@ -2,7 +2,7 @@
 
 # --- ETAPA 0 ---
 gh issue create --title "[Etapa 0] Alinhamento e Esqueleto Inicial" --body "Ler o código, confirmar lista de bugs, combinar estrutura de pastas, nomes de interfaces e realizar o primeiro push do esqueleto." --label "planejamento,etapa-0"
-
+criada*
 # --- PESSOA 1 ---
 gh issue create --title "[Pessoa 1] Infraestrutura, Dados e DI" --body "Resolver problemas 3, 4, 13 e 14. Configurar AppDbContext, Repositories assíncronos, DbSeeder, Program.cs com DI e Enums." --label "infra,backend,pessoa-1"
 
