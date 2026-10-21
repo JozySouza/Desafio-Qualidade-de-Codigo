@@ -7,4 +7,10 @@ public class Produto
     public decimal Preco { get; set; }
     public int Estoque { get; set; }
     public string Descricao { get; internal set; } = string.Empty;
+
+    public void Reabastecer(int quantidade)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantidade);
+        Estoque += quantidade;
+    }
 }

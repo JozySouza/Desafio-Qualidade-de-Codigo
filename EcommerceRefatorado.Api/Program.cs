@@ -1,5 +1,6 @@
 using EcommerceRefatorado;
 using EcommerceRefatorado.Interfaces;
+using EcommerceRefatorado.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,8 @@ builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddScoped<IProdutoRepository, ProdutoRepository>();
 builder.Services.AddScoped<IPedidoRepository, PedidoRepository>();
+
+builder.Services.AddScoped<IEstoqueService, EstoqueService>();
 
 var app = builder.Build();
 await DbSeeder.SeedAsync(app.Services);
