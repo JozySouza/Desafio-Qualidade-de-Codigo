@@ -35,6 +35,9 @@ jobs:
       - name: Compilar
         run: dotnet build ${{ env.SOLUTION }} --configuration Release --no-restore
 
+      - name: Testes unitários
+        run: dotnet test --no-build -c Release --filter "Category=Unit"
+
       - name: Rodar os testes
         run: >
           dotnet test ${{ env.SOLUTION }}
