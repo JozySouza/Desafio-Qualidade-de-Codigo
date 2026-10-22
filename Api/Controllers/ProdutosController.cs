@@ -5,45 +5,44 @@ namespace EcommerceRefatorado;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ProdutosController(IProdutoRepository produtoRepository) : ControllerBase
+public class ProdutosController : ControllerBase
 {
-    [HttpGet]
-    [ProducesResponseType<IReadOnlyList<Produto>>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<Produto>>> GetAll(CancellationToken cancellationToken)
+    private readonly IProdutoService _service;
+
+    public ProdutosController(IProdutoService service)
     {
-        var produtos = await produtoRepository.GetAllAsync(cancellationToken);
+        _service = service;
+    }
+
+    [HttpGet]
+    [ProducesResponseType<IReadOnlyList<ProdutoResponse>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<ProdutoResponse>>> GetAll(CancellationToken cancellationToken)
+    {
+        var produtos = await _service.GetAllAsync(cancellationToken);
 
         return Ok(produtos);
     }
 
     [HttpGet("{id:int}")]
-    [ProducesResponseType<Produto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProdutoResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<Produto>> GetById(int id, CancellationToken cancellationToken)
+    public async Task<ActionResult<ProdutoResponse>> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        var produto = await produtoRepository.GetByIdAsync(id, cancellationToken);
+        var produto = await _service.GetByIdAsync(id ,cancellationToken);
 
         return produto is null ? NotFound() : Ok(produto);
     }
 
     [HttpPost]
-    [ProducesResponseType<Produto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProdutoResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<Produto>> Create(
+    public async Task<ActionResult<ProdutoResponse>> Create(
         ProdutoRequest request,
         CancellationToken cancellationToken)
     {
-        var produto = new Produto
-        {
-            Nome = request.Nome,
-            Descricao = request.Descricao,
-            Preco = request.Preco,
-            Estoque = request.Estoque
-        };
+        var produto = await _service.AddAsync(request, cancellationToken);
 
-        await produtoRepository.AddAsync(produto, cancellationToken);
-
-        return CreatedAtAction(nameof(GetById), new { id = produto.Id }, produto);
+        return CreatedAtAction(nameof(GetByIdAsync), new { id = produto.Id }, produto);
     }
 
     [HttpPut("{id:int}")]
@@ -55,20 +54,9 @@ public class ProdutosController(IProdutoRepository produtoRepository) : Controll
         ProdutoRequest request,
         CancellationToken cancellationToken)
     {
-        var produto = await produtoRepository.GetByIdAsync(id, cancellationToken);
+        var produto = await _service.UpdateAsync(id, request, cancellationToken);
 
-        if (produto is null)
-        {
-            return NotFound();
-        }
-
-        produto.Nome = request.Nome;
-        produto.Descricao = request.Descricao;
-        produto.Preco = request.Preco;
-        produto.Estoque = request.Estoque;
-
-        await produtoRepository.UpdateAsync(produto, cancellationToken);
-        return NoContent();
+        return produto is null ? NotFound() : NoContent();
     }
 
     [HttpDelete("{id:int}")]
@@ -76,7 +64,8 @@ public class ProdutosController(IProdutoRepository produtoRepository) : Controll
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
     {
-        var deleted = await produtoRepository.DeleteAsync(id, cancellationToken);
+        var deleted = await _service.DeleteAsync(id ,cancellationToken);
+
         return deleted ? NoContent() : NotFound();
     }
 }

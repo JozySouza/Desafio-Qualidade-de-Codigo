@@ -12,6 +12,7 @@ public static class DbSeeder
         await db.Database.EnsureCreatedAsync();
         await EnsureDescricaoColumnAsync(db);
         await EnsureFormaPagamentoColumnAsync(db);
+        await EnsureAtivoColumnAsync(db);
 
         if (await db.Produtos.AnyAsync())
         {
@@ -93,6 +94,15 @@ public static class DbSeeder
         finally
         {
             await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static async Task EnsureAtivoColumnAsync(AppDbContext db)
+    {
+        if (!await HasColumnAsync(db, "Produtos", nameof(Produto.Ativo)))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "Produtos" ADD COLUMN "Ativo" INTEGER NOT NULL DEFAULT 1;""");
         }
     }
 }
