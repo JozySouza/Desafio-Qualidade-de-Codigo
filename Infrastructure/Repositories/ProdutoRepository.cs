@@ -31,19 +31,4 @@ public sealed class ProdutoRepository(AppDbContext dbContext) : IProdutoReposito
         dbContext.Produtos.Update(produto);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
-
-    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
-    {
-        var produto = await dbContext.Produtos
-            .FirstOrDefaultAsync(produto => produto.Id == id, cancellationToken);
-
-        if (produto is null)
-        {
-            return false;
-        }
-
-        dbContext.Produtos.Remove(produto);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return true;
-    }
 }

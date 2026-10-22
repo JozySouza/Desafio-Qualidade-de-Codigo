@@ -14,13 +14,20 @@ public class ProdutoService : IProdutoService
     public async Task<IReadOnlyList<ProdutoResponse>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var produtos = await _repository.GetAllAsync(cancellationToken);
-        return produtos.Select(p => new ProdutoResponse(p.Id, p.Nome, p.Preco, p.Estoque, p.Descricao)).ToList();
+
+        return produtos
+            .Where(produto => produto.Ativo)
+            .Select(p => new ProdutoResponse(p.Id, p.Nome, p.Preco, p.Estoque, p.Descricao))
+            .ToList();
     }
 
     public async Task<ProdutoResponse?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         var produto = await _repository.GetByIdAsync(id, cancellationToken);
-        if (produto is null) return null;
+        if (produto is null || !produto.Ativo)
+        {
+            return null;
+        }
 
         return new ProdutoResponse(produto.Id, produto.Nome, produto.Preco, produto.Estoque, produto.Descricao);
     }
@@ -43,7 +50,10 @@ public class ProdutoService : IProdutoService
     public async Task<ProdutoResponse?> UpdateAsync(int id, ProdutoRequest request, CancellationToken cancellationToken = default)
     {
         var produto = await _repository.GetByIdAsync(id, cancellationToken);
-        if (produto is null) return null;
+        if (produto is null || !produto.Ativo)
+        {
+            return null;
+        } 
 
         produto.Nome = request.Nome;
         produto.Descricao = request.Descricao;
@@ -63,7 +73,15 @@ public class ProdutoService : IProdutoService
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var deleted = await _repository.DeleteAsync(id, cancellationToken);
-        return deleted;
+        var produto = await _repository.GetByIdAsync(id, cancellationToken);
+        if (produto is null || !produto.Ativo)
+        {
+            return false;
+        }
+
+        produto.Desativar();
+        await _repository.UpdateAsync(produto, cancellationToken);
+
+        return true;
     }
 }
