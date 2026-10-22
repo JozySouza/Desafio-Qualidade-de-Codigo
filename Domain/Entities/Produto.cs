@@ -15,9 +15,24 @@ public class Produto
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantidade);
         Estoque += quantidade;
     }
+    public void DebitarEstoque(int quantidade)
+    {
+        GarantirDisponivel(quantidade);
+        Estoque -= quantidade;
+    }
 
     public void Desativar()
     {
         Ativo = false;
+    }
+
+    public void GarantirDisponivel(int quantidade)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(quantidade);
+
+        if (Estoque < quantidade)
+        {
+            throw new InvalidOperationException("Estoque insuficiente.");
+        }
     }
 }
