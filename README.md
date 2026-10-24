@@ -1,4 +1,3 @@
-
 # EcommerceRefatorado
 
 API de e-commerce em ASP.NET Core/.NET 10, com persistência SQLite, documentação Swagger e uma CLI de apoio à squad.
