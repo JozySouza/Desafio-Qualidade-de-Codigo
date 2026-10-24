@@ -14,6 +14,12 @@ builder.Services.AddScoped<IPedidoRepository, PedidoRepository>();
 
 builder.Services.AddScoped<IEstoqueService, EstoqueService>();
 builder.Services.AddScoped<IProdutoService, ProdutoService>();
+builder.Services.AddScoped<IPedidoService, PedidoService>();
+builder.Services.AddScoped<IPagamentoGateway, PagamentoMockGateway>();
+builder.Services.AddScoped<ILogisticaGateway, LogisticaMockGateway>();
+builder.Services.AddSingleton<IRegraDesconto, DescontoValorAlto>();
+builder.Services.AddSingleton<IRegraDesconto, DescontoVip>();
+builder.Services.AddScoped<CalculadoraDesconto>();
 
 var app = builder.Build();
 await DbSeeder.SeedAsync(app.Services);
