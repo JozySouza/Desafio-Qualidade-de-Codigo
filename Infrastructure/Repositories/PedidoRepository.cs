@@ -56,6 +56,26 @@ public sealed class PedidoRepository(AppDbContext dbContext) : IPedidoRepository
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task UpdateWithStockAsync(
+        Pedido pedido,
+        IReadOnlyCollection<Produto> produtos,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            dbContext.Pedidos.Update(pedido);
+            dbContext.Produtos.UpdateRange(produtos);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
         var pedido = await dbContext.Pedidos

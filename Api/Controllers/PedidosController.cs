@@ -54,4 +54,34 @@ public class PedidosController : ControllerBase
             new { id = pedido.Id },
             pedido);
     }
+
+    [HttpPost("{id:int}/pagamento")]
+    [ProducesResponseType<PedidoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PedidoResponse>> ReprocessarPagamento(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var pedido = await _service.ReprocessarPagamentoAsync(
+            id,
+            cancellationToken);
+
+        return pedido is null ? NotFound() : Ok(pedido);
+    }
+
+    [HttpPost("{id:int}/envio")]
+    [ProducesResponseType<PedidoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PedidoResponse>> ReenviarLogistica(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var pedido = await _service.ReenviarLogisticaAsync(
+            id,
+            cancellationToken);
+
+        return pedido is null ? NotFound() : Ok(pedido);
+    }
 }

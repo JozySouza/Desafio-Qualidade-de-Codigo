@@ -79,31 +79,17 @@ public sealed class PedidoService(
             subtotal,
             request.ClienteEmail);
 
-        // Valida o estoque antes do pagamento, mas só o altera após aprovação.
-        var pagamentoAprovado = await pagamentoGateway.ProcessarAsync(
-            total,
-            request.FormaPagamento,
-            cancellationToken);
-
-        if (pagamentoAprovado)
-        {
-            foreach (var item in itensPedido)
-            {
-                item.Produto.DebitarEstoque(item.Quantidade);
-            }
-        }
-
         var pedido = new Pedido
         {
             ClienteNome = request.ClienteNome.Trim(),
             ClienteEmail = request.ClienteEmail.Trim(),
             FormaPagamento = request.FormaPagamento,
-            Status = pagamentoAprovado
-                ? StatusPedido.Pago
-                : StatusPedido.Falhou,
+            Status = StatusPedido.Pendente,
             ValorTotal = total,
             Itens = itensPedido
         };
+
+        await ProcessarPagamentoAsync(pedido, cancellationToken);
 
         // Salva o pedido e a baixa de estoque na mesma transação.
         await pedidoRepository.AddWithStockAsync(
@@ -111,53 +97,69 @@ public sealed class PedidoService(
             produtos,
             cancellationToken);
 
-        if (!pagamentoAprovado)
+        if (pedido.Status != StatusPedido.Pago)
         {
             return Mapear(pedido);
         }
 
-        // Tenta realizar o envio logístico somente após pagamento aprovado.
-        string? codigoRastreio = null;
+        await EnviarParaLogisticaAsync(pedido, cancellationToken);
 
-        try
+        return Mapear(pedido);
+    }
+
+    public async Task<PedidoResponse?> ReprocessarPagamentoAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var pedido = await pedidoRepository.GetByIdAsync(id, cancellationToken);
+        if (pedido is null)
         {
-            codigoRastreio = await logisticaGateway.EnviarAsync(
-                pedido,
-                cancellationToken);
-        }
-        catch (OperationCanceledException)
-            when (cancellationToken.IsCancellationRequested)
-        {
-            // Respeita o cancelamento da requisição.
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // O pedido já foi pago e salvo.
-            // Registra a falha sem desfazer o pagamento.
-            logger.LogError(
-                ex,
-                "Falha na logística do pedido {PedidoId}. Pedido permanece pago.",
-                pedido.Id);
+            return null;
         }
 
-        // Atualiza o pedido somente se a logística retornar um código.
-        // Erros de persistência não são tratados como falhas logísticas.
-        if (codigoRastreio is not null)
+        if (pedido.Status != StatusPedido.Falhou)
         {
-            pedido.CodigoRastreio = codigoRastreio;
-            pedido.Status = StatusPedido.Enviado;
-
-            await pedidoRepository.UpdateAsync(
-                pedido,
-                cancellationToken);
-
-            logger.LogInformation(
-                "Pedido {PedidoId} enviado com sucesso. Código: {CodigoRastreio}",
-                pedido.Id,
-                codigoRastreio);
+            throw new DomainException(
+                "Somente pedidos com pagamento falho podem ser reprocessados.");
         }
 
+        await ProcessarPagamentoAsync(pedido, cancellationToken);
+
+        var produtos = pedido.Itens
+            .Select(item => item.Produto)
+            .DistinctBy(produto => produto.Id)
+            .ToList();
+
+        await pedidoRepository.UpdateWithStockAsync(
+            pedido,
+            produtos,
+            cancellationToken);
+
+        if (pedido.Status == StatusPedido.Pago)
+        {
+            await EnviarParaLogisticaAsync(pedido, cancellationToken);
+        }
+
+        return Mapear(pedido);
+    }
+
+    public async Task<PedidoResponse?> ReenviarLogisticaAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var pedido = await pedidoRepository.GetByIdAsync(id, cancellationToken);
+        if (pedido is null)
+        {
+            return null;
+        }
+
+        if (pedido.Status is not (StatusPedido.Pago or StatusPedido.Enviado))
+        {
+            throw new DomainException(
+                "Somente pedidos pagos podem ser enviados à logística.");
+        }
+
+        await EnviarParaLogisticaAsync(pedido, cancellationToken);
         return Mapear(pedido);
     }
 
@@ -179,6 +181,95 @@ public sealed class PedidoService(
             cancellationToken);
 
         return pedido is null ? null : Mapear(pedido);
+    }
+
+    private async Task ProcessarPagamentoAsync(
+        Pedido pedido,
+        CancellationToken cancellationToken)
+    {
+        var itensPorProduto = pedido.Itens
+            .GroupBy(item => item.ProdutoId)
+            .Select(grupo => new
+            {
+                Produto = grupo.First().Produto,
+                Quantidade = grupo.Sum(item => item.Quantidade)
+            })
+            .ToList();
+
+        foreach (var item in itensPorProduto)
+        {
+            if (!item.Produto.Ativo)
+            {
+                throw new DomainException(
+                    $"Produto {item.Produto.Nome} está inativo.");
+            }
+
+            if (item.Produto.Estoque < item.Quantidade)
+            {
+                throw new DomainException(
+                    $"Estoque insuficiente para {item.Produto.Nome}.");
+            }
+        }
+
+        var pagamentoAprovado = await pagamentoGateway.ProcessarAsync(
+            pedido.ValorTotal,
+            pedido.FormaPagamento,
+            cancellationToken);
+
+        if (!pagamentoAprovado)
+        {
+            pedido.Status = StatusPedido.Falhou;
+            return;
+        }
+
+        foreach (var item in itensPorProduto)
+        {
+            item.Produto.DebitarEstoque(item.Quantidade);
+        }
+
+        pedido.Status = StatusPedido.Pago;
+    }
+
+    private async Task EnviarParaLogisticaAsync(
+        Pedido pedido,
+        CancellationToken cancellationToken)
+    {
+        string? codigoRastreio;
+
+        try
+        {
+            codigoRastreio = await logisticaGateway.EnviarAsync(
+                pedido,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Falha na logística do pedido {PedidoId}. Pedido permanece pago.",
+                pedido.Id);
+            return;
+        }
+
+        if (codigoRastreio is null)
+        {
+            return;
+        }
+
+        pedido.CodigoRastreio = codigoRastreio;
+        pedido.Status = StatusPedido.Enviado;
+
+        await pedidoRepository.UpdateAsync(pedido, cancellationToken);
+
+        logger.LogInformation(
+            "Pedido {PedidoId} enviado com sucesso. Código: {CodigoRastreio}",
+            pedido.Id,
+            codigoRastreio);
     }
 
     private static PedidoResponse Mapear(Pedido pedido)

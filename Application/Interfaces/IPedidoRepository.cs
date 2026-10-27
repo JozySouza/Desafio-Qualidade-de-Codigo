@@ -9,5 +9,6 @@ public interface IPedidoRepository
     Task AddAsync(Pedido pedido, CancellationToken cancellationToken = default);
     Task AddWithStockAsync(Pedido pedido, IReadOnlyCollection<Produto> produtos, CancellationToken cancellationToken = default);
     Task UpdateAsync(Pedido pedido, CancellationToken cancellationToken = default);
+    Task UpdateWithStockAsync(Pedido pedido, IReadOnlyCollection<Produto> produtos, CancellationToken cancellationToken = default);
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
 }
