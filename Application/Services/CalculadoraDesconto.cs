@@ -4,15 +4,11 @@ public sealed class CalculadoraDesconto(IEnumerable<IRegraDesconto> regras)
 {
 	public decimal Calcular(decimal total, string clienteEmail)
 	{
-		foreach (var regra in regras)
-		{
-			var desconto = regra.CalcularDesconto(total, clienteEmail);
-			if (desconto > 0m)
-			{
-				return total - desconto;
-			}
-		}
+		var percentual = regras
+			.Select(regra => regra.CalcularPercentual(total, clienteEmail))
+			.DefaultIfEmpty(0m)
+			.Max();
 
-		return total;
+		return total - total * percentual;
 	}
 }

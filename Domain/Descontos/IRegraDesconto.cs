@@ -2,5 +2,5 @@ namespace EcommerceRefatorado;
 
 public interface IRegraDesconto
 {
-	decimal CalcularDesconto(decimal total, string clienteEmail);
+	decimal CalcularPercentual(decimal total, string clienteEmail);
 }

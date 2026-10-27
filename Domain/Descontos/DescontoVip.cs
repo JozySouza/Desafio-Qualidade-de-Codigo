@@ -2,10 +2,12 @@ namespace EcommerceRefatorado;
 
 public sealed class DescontoVip : IRegraDesconto
 {
-	public decimal CalcularDesconto(decimal total, string clienteEmail)
+	private const decimal PercentualDesconto = 0.20m;
+
+	public decimal CalcularPercentual(decimal total, string clienteEmail)
 	{
 		return clienteEmail.Contains("vip", StringComparison.OrdinalIgnoreCase)
-			? total * 0.20m
+			? PercentualDesconto
 			: 0m;
 	}
 }
