@@ -61,8 +61,6 @@ public sealed class PedidoService(
                     $"Estoque insuficiente para {produto.Nome}.");
             }
 
-            produto.DebitarEstoque(itemRequest.Quantidade);
-
             produtos.Add(produto);
 
             itensPedido.Add(new ItemPedido
@@ -81,15 +79,18 @@ public sealed class PedidoService(
             subtotal,
             request.ClienteEmail);
 
-        // Processa o pagamento antes de persistir o pedido e o estoque.
+        // Valida o estoque antes do pagamento, mas só o altera após aprovação.
         var pagamentoAprovado = await pagamentoGateway.ProcessarAsync(
             total,
             request.FormaPagamento,
             cancellationToken);
 
-        if (!pagamentoAprovado)
+        if (pagamentoAprovado)
         {
-            throw new DomainException("Pagamento recusado.");
+            foreach (var item in itensPedido)
+            {
+                item.Produto.DebitarEstoque(item.Quantidade);
+            }
         }
 
         var pedido = new Pedido
@@ -97,7 +98,9 @@ public sealed class PedidoService(
             ClienteNome = request.ClienteNome.Trim(),
             ClienteEmail = request.ClienteEmail.Trim(),
             FormaPagamento = request.FormaPagamento,
-            Status = StatusPedido.Pago,
+            Status = pagamentoAprovado
+                ? StatusPedido.Pago
+                : StatusPedido.Falhou,
             ValorTotal = total,
             Itens = itensPedido
         };
@@ -108,7 +111,12 @@ public sealed class PedidoService(
             produtos,
             cancellationToken);
 
-        // Tenta realizar o envio logístico.
+        if (!pagamentoAprovado)
+        {
+            return Mapear(pedido);
+        }
+
+        // Tenta realizar o envio logístico somente após pagamento aprovado.
         string? codigoRastreio = null;
 
         try

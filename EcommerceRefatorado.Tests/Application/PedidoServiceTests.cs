@@ -11,7 +11,7 @@ public class PedidoServiceTests
 {
     [Fact]
     [Trait("Category", "Unit")]
-    public async Task PagamentoRecusado_NaoDeveSalvarPedido()
+    public async Task PagamentoRecusado_DeveSalvarPedidoFalhouSemDebitarEstoque()
     {
         var pagamento = new FakePagamentoGateway
         {
@@ -24,11 +24,13 @@ public class PedidoServiceTests
             repositorioPedidos,
             new LogisticaGatewayFake());
 
-        await Assert.ThrowsAsync<DomainException>(
-            () => service.CriarAsync(CriarRequest()));
+        var resultado = await service.CriarAsync(CriarRequest());
 
+        Assert.Equal(StatusPedido.Falhou, resultado.Status);
         Assert.Equal(1, pagamento.QuantidadeChamadas);
-        Assert.Equal(0, repositorioPedidos.QuantidadeSalvamentos);
+        Assert.Equal(1, repositorioPedidos.QuantidadeSalvamentos);
+        Assert.Equal(StatusPedido.Falhou, repositorioPedidos.PedidoSalvo?.Status);
+        Assert.Equal(10, repositorioPedidos.EstoqueNoSalvamento);
     }
 
     [Fact]
@@ -175,6 +177,8 @@ public class PedidoServiceTests
     {
         public int QuantidadeSalvamentos { get; private set; }
         public int QuantidadeAtualizacoes { get; private set; }
+        public Pedido? PedidoSalvo { get; private set; }
+        public int? EstoqueNoSalvamento { get; private set; }
 
         public bool FalharNaAtualizacao { get; set; }
 
@@ -184,6 +188,8 @@ public class PedidoServiceTests
             CancellationToken cancellationToken = default)
         {
             QuantidadeSalvamentos++;
+            PedidoSalvo = pedido;
+            EstoqueNoSalvamento = produtos.Single().Estoque;
             pedido.Id = 1;
             return Task.CompletedTask;
         }
