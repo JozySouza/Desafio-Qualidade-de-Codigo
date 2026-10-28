@@ -57,15 +57,14 @@ public class CalculadoraDescontoTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void PedidoAltoDeClienteVip_DeveSeguirPrioridadeAtual()
+    public void PedidoAltoDeClienteVip_DeveAplicarMaiorDesconto()
     {
         var calculadora = CriarCalculadora();
 
         var resultado = calculadora.Calcular(
             600m, "clientevip@exemplo.com");
 
-        // A regra de valor alto é avaliada primeiro.
-        Assert.Equal(540m, resultado);
+        Assert.Equal(480m, resultado);
     }
 
     private static CalculadoraDesconto CriarCalculadora()

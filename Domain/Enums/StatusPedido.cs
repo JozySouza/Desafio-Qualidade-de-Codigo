@@ -5,5 +5,6 @@ public enum StatusPedido
     Pendente,
     Pago,
     Enviado,
-    Cancelado
+    Cancelado,
+    Falhou
 }
