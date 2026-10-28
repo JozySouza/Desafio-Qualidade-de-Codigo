@@ -11,6 +11,15 @@ public sealed class PedidoService(
     CalculadoraDesconto calculadoraDesconto,
     ILogger<PedidoService> logger) : IPedidoService
 {
+    private enum ResultadoProcessamento
+    {
+        Aprovado,
+        Recusado,
+        EstoqueInsuficiente,
+        ReprocessamentoIndisponivel,
+        ErroPagamento
+    }
+
     public async Task<PedidoResponse> CriarAsync(
         PedidoRequest request,
         CancellationToken cancellationToken = default)
@@ -55,6 +64,14 @@ public sealed class PedidoService(
                     $"Produto {produto.Nome} está inativo.");
             }
 
+            if (itemRequest.Quantidade <= 0)
+            {
+                throw new DomainException(
+                    $"Quantidade inválida para {produto.Nome}.");
+            }
+
+            // A validação inicial evita pedidos inválidos.
+            // A proteção contra concorrência acontece na reserva.
             if (produto.Estoque < itemRequest.Quantidade)
             {
                 throw new DomainException(
@@ -89,30 +106,42 @@ public sealed class PedidoService(
             Itens = itensPedido
         };
 
-        // Registra o pedido antes de chamar o gateway de pagamento.
+        // Registra o pedido antes do processamento do pagamento.
         await pedidoRepository.AddPendingAsync(
             pedido,
             produtos,
             cancellationToken);
 
-        // Assim, uma falha ao registrar o pedido não resulta em cobrança.
-        await ProcessarPagamentoAsync(pedido, cancellationToken);
+        // Reserva, pagamento simulado e atualização do pedido
+        // acontecem dentro da mesma transação SQLite.
+        var resultado = await pedidoRepository.ExecutarEmTransacaoAsync(
+            ct => ProcessarPagamentoAsync(pedido, ct),
+            cancellationToken);
 
-        if (pedido.Status == StatusPedido.Falhou)
+        if (resultado == ResultadoProcessamento.EstoqueInsuficiente)
         {
-            // Mantém a recusa registrada para permitir o reprocessamento.
-            await pedidoRepository.UpdateAsync(pedido, cancellationToken);
+            throw new DomainException(
+                "Estoque insuficiente para concluir o pedido.");
+        }
+
+        if (resultado == ResultadoProcessamento.Recusado)
+        {
             return Mapear(pedido);
         }
 
-        // Persiste o pagamento aprovado e a baixa de estoque na mesma transação.
-        await pedidoRepository.UpdateWithStockAsync(
-            pedido,
-            produtos,
-            cancellationToken);
+        // O erro só é informado depois que a transação
+        // registra a falha e libera o estoque.
+        if (resultado == ResultadoProcessamento.ErroPagamento)
+        {
+            throw new InvalidOperationException(
+                "Não foi possível processar o pagamento. " +
+                "O pedido foi marcado como falho.");
+        }
 
-        // A logística só recebe pedidos já persistidos como pagos.
-        await EnviarParaLogisticaAsync(pedido, cancellationToken);
+        // A logística só recebe pedidos com pagamento confirmado.
+        await EnviarParaLogisticaAsync(
+            pedido,
+            cancellationToken);
 
         return Mapear(pedido);
     }
@@ -121,7 +150,10 @@ public sealed class PedidoService(
         int id,
         CancellationToken cancellationToken = default)
     {
-        var pedido = await pedidoRepository.GetByIdAsync(id, cancellationToken);
+        var pedido = await pedidoRepository.GetByIdAsync(
+            id,
+            cancellationToken);
+
         if (pedido is null)
         {
             return null;
@@ -133,21 +165,47 @@ public sealed class PedidoService(
                 "Somente pedidos com pagamento falho podem ser reprocessados.");
         }
 
-        await ProcessarPagamentoAsync(pedido, cancellationToken);
+        var resultado = await pedidoRepository.ExecutarEmTransacaoAsync(
+            async ct =>
+            {
+                // Impede que duas requisições iniciem o
+                // reprocessamento do mesmo pedido.
+                var iniciou = await pedidoRepository
+                    .TentarIniciarReprocessamentoAsync(id, ct);
 
-        var produtos = pedido.Itens
-            .Select(item => item.Produto)
-            .DistinctBy(produto => produto.Id)
-            .ToList();
+                if (!iniciou)
+                {
+                    return ResultadoProcessamento.ReprocessamentoIndisponivel;
+                }
 
-        await pedidoRepository.UpdateWithStockAsync(
-            pedido,
-            produtos,
+                return await ProcessarPagamentoAsync(pedido, ct);
+            },
             cancellationToken);
 
-        if (pedido.Status == StatusPedido.Pago)
+        if (resultado == ResultadoProcessamento.ReprocessamentoIndisponivel)
         {
-            await EnviarParaLogisticaAsync(pedido, cancellationToken);
+            throw new DomainException(
+                "Este pedido não está disponível para reprocessamento.");
+        }
+
+        if (resultado == ResultadoProcessamento.EstoqueInsuficiente)
+        {
+            throw new DomainException(
+                "Estoque insuficiente para reprocessar o pedido.");
+        }
+
+        if (resultado == ResultadoProcessamento.ErroPagamento)
+        {
+            throw new InvalidOperationException(
+                "Não foi possível reprocessar o pagamento. " +
+                "O pedido permanece como falho.");
+        }
+
+        if (resultado == ResultadoProcessamento.Aprovado)
+        {
+            await EnviarParaLogisticaAsync(
+                pedido,
+                cancellationToken);
         }
 
         return Mapear(pedido);
@@ -157,19 +215,26 @@ public sealed class PedidoService(
         int id,
         CancellationToken cancellationToken = default)
     {
-        var pedido = await pedidoRepository.GetByIdAsync(id, cancellationToken);
+        var pedido = await pedidoRepository.GetByIdAsync(
+            id,
+            cancellationToken);
+
         if (pedido is null)
         {
             return null;
         }
 
-        if (pedido.Status is not (StatusPedido.Pago or StatusPedido.Enviado))
+        if (pedido.Status is not
+            (StatusPedido.Pago or StatusPedido.Enviado))
         {
             throw new DomainException(
                 "Somente pedidos pagos podem ser enviados à logística.");
         }
 
-        await EnviarParaLogisticaAsync(pedido, cancellationToken);
+        await EnviarParaLogisticaAsync(
+            pedido,
+            cancellationToken);
+
         return Mapear(pedido);
     }
 
@@ -193,52 +258,96 @@ public sealed class PedidoService(
         return pedido is null ? null : Mapear(pedido);
     }
 
-    private async Task ProcessarPagamentoAsync(
+    private async Task<ResultadoProcessamento> ProcessarPagamentoAsync(
         Pedido pedido,
         CancellationToken cancellationToken)
     {
-        var itensPorProduto = pedido.Itens
-            .GroupBy(item => item.ProdutoId)
-            .Select(grupo => new
-            {
-                Produto = grupo.First().Produto,
-                Quantidade = grupo.Sum(item => item.Quantidade)
-            })
-            .ToList();
+        // A reserva é feita diretamente no SQLite.
+        // A verificação e a redução do estoque são atômicas.
+        var estoqueReservado =
+            await pedidoRepository.ReservarEstoqueAsync(
+                pedido.Itens.ToList(),
+                cancellationToken);
 
-        foreach (var item in itensPorProduto)
+        if (!estoqueReservado)
         {
-            if (!item.Produto.Ativo)
-            {
-                throw new DomainException(
-                    $"Produto {item.Produto.Nome} está inativo.");
-            }
+            pedido.Status = StatusPedido.Falhou;
 
-            if (item.Produto.Estoque < item.Quantidade)
-            {
-                throw new DomainException(
-                    $"Estoque insuficiente para {item.Produto.Nome}.");
-            }
+            await pedidoRepository.UpdateAsync(
+                pedido,
+                cancellationToken);
+
+            return ResultadoProcessamento.EstoqueInsuficiente;
         }
 
-        var pagamentoAprovado = await pagamentoGateway.ProcessarAsync(
-            pedido.ValorTotal,
-            pedido.FormaPagamento,
-            cancellationToken);
+        bool pagamentoAprovado;
+
+        try
+        {
+            // O pagamento simulado é processado
+            // depois que o estoque foi reservado.
+            pagamentoAprovado =
+                await pagamentoGateway.ProcessarAsync(
+                    pedido.ValorTotal,
+                    pedido.FormaPagamento,
+                    cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            // Um cancelamento solicitado deve interromper
+            // a operação e provocar rollback da transação.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Erro ao processar pagamento do pedido {PedidoId}.",
+                pedido.Id);
+
+            // O gateway simulado apresentou um erro.
+            // Devolve as unidades reservadas.
+            await pedidoRepository.LiberarEstoqueAsync(
+                pedido.Itens.ToList(),
+                CancellationToken.None);
+
+            // Registra a falha para permitir
+            // um novo processamento posteriormente.
+            pedido.Status = StatusPedido.Falhou;
+
+            await pedidoRepository.UpdateAsync(
+                pedido,
+                CancellationToken.None);
+
+            return ResultadoProcessamento.ErroPagamento;
+        }
 
         if (!pagamentoAprovado)
         {
+            // Pagamento recusado: devolve o estoque reservado.
+            await pedidoRepository.LiberarEstoqueAsync(
+                pedido.Itens.ToList(),
+                cancellationToken);
+
             pedido.Status = StatusPedido.Falhou;
-            return;
+
+            await pedidoRepository.UpdateAsync(
+                pedido,
+                cancellationToken);
+
+            return ResultadoProcessamento.Recusado;
         }
 
-        // O estoque só é debitado após aprovação do pagamento.
-        foreach (var item in itensPorProduto)
-        {
-            item.Produto.DebitarEstoque(item.Quantidade);
-        }
-
+        // O estoque já foi reduzido durante a reserva.
+        // Confirmamos apenas o status do pedido.
         pedido.Status = StatusPedido.Pago;
+
+        await pedidoRepository.UpdateAsync(
+            pedido,
+            cancellationToken);
+
+        return ResultadoProcessamento.Aprovado;
     }
 
     private async Task EnviarParaLogisticaAsync(
@@ -262,8 +371,10 @@ public sealed class PedidoService(
         {
             logger.LogError(
                 ex,
-                "Falha na logística do pedido {PedidoId}. Pedido permanece pago.",
+                "Falha na logística do pedido {PedidoId}. " +
+                "Pedido permanece pago.",
                 pedido.Id);
+
             return;
         }
 
@@ -275,7 +386,9 @@ public sealed class PedidoService(
         pedido.CodigoRastreio = codigoRastreio;
         pedido.Status = StatusPedido.Enviado;
 
-        await pedidoRepository.UpdateAsync(pedido, cancellationToken);
+        await pedidoRepository.UpdateAsync(
+            pedido,
+            cancellationToken);
 
         logger.LogInformation(
             "Pedido {PedidoId} enviado com sucesso. Código: {CodigoRastreio}",
