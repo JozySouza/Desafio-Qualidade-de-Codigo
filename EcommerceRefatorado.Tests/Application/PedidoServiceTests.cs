@@ -29,8 +29,31 @@ public class PedidoServiceTests
         Assert.Equal(StatusPedido.Falhou, resultado.Status);
         Assert.Equal(1, pagamento.QuantidadeChamadas);
         Assert.Equal(1, repositorioPedidos.QuantidadeSalvamentos);
+        Assert.Equal(1, repositorioPedidos.QuantidadeAtualizacoes);
         Assert.Equal(StatusPedido.Falhou, repositorioPedidos.PedidoSalvo?.Status);
         Assert.Equal(10, repositorioPedidos.EstoqueNoSalvamento);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task FalhaAoSalvarPedido_NaoDeveProcessarPagamento()
+    {
+        var pagamento = new FakePagamentoGateway();
+        var repositorioPedidos = new PedidoRepositoryFake
+        {
+            FalharNaCriacao = true
+        };
+        var service = CriarService(
+            pagamento,
+            repositorioPedidos,
+            new LogisticaGatewayFake());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.CriarAsync(CriarRequest()));
+
+        Assert.Equal(0, pagamento.QuantidadeChamadas);
+        Assert.Equal(1, repositorioPedidos.QuantidadeSalvamentos);
+        Assert.Equal(0, repositorioPedidos.QuantidadeAtualizacoesComEstoque);
     }
 
     [Fact]
@@ -59,18 +82,22 @@ public class PedidoServiceTests
     {
         var pagamento = new FakePagamentoGateway();
         var repositorioPedidos = new PedidoRepositoryFake();
+        var logistica = new LogisticaGatewayFake { DeveFalhar = true };
 
         var service = CriarService(
             pagamento,
             repositorioPedidos,
-            new LogisticaGatewayFake { DeveFalhar = true });
+            logistica);
 
         var resultado = await service.CriarAsync(CriarRequest());
 
         Assert.Equal(StatusPedido.Pago, resultado.Status);
         Assert.Null(resultado.CodigoRastreio);
         Assert.Equal(1, repositorioPedidos.QuantidadeSalvamentos);
+        Assert.Equal(1, repositorioPedidos.QuantidadeAtualizacoesComEstoque);
         Assert.Equal(0, repositorioPedidos.QuantidadeAtualizacoes);
+        Assert.Equal(1, logistica.QuantidadeChamadas);
+        Assert.Equal(1, logistica.PedidoIdNoEnvio);
     }
 
     [Fact]
@@ -95,6 +122,7 @@ public class PedidoServiceTests
             () => service.CriarAsync(CriarRequest()));
 
         Assert.Equal(1, repositorioPedidos.QuantidadeSalvamentos);
+        Assert.Equal(1, repositorioPedidos.QuantidadeAtualizacoesComEstoque);
         Assert.Equal(1, repositorioPedidos.QuantidadeAtualizacoes);
     }
 
@@ -306,7 +334,27 @@ public class PedidoServiceTests
         public int? EstoqueNoSalvamento { get; private set; }
         public int QuantidadeAtualizacoesComEstoque { get; private set; }
 
+        public bool FalharNaCriacao { get; set; }
         public bool FalharNaAtualizacao { get; set; }
+
+        public Task AddPendingAsync(
+            Pedido pedido,
+            IReadOnlyCollection<Produto> produtos,
+            CancellationToken cancellationToken = default)
+        {
+            QuantidadeSalvamentos++;
+
+            if (FalharNaCriacao)
+            {
+                throw new InvalidOperationException(
+                    "Falha ao criar pedido no banco.");
+            }
+
+            PedidoSalvo = pedido;
+            EstoqueNoSalvamento = produtos.Single().Estoque;
+            pedido.Id = 1;
+            return Task.CompletedTask;
+        }
 
         public Task AddWithStockAsync(
             Pedido pedido,
@@ -373,12 +421,14 @@ public class PedidoServiceTests
     {
         public bool DeveFalhar { get; set; }
         public int QuantidadeChamadas { get; private set; }
+        public int PedidoIdNoEnvio { get; private set; }
 
         public Task<string> EnviarAsync(
             Pedido pedido,
             CancellationToken cancellationToken = default)
         {
             QuantidadeChamadas++;
+            PedidoIdNoEnvio = pedido.Id;
 
             if (DeveFalhar)
             {

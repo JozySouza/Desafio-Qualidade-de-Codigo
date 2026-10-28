@@ -30,6 +30,16 @@ public sealed class PedidoRepository(AppDbContext dbContext) : IPedidoRepository
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task AddPendingAsync(
+        Pedido pedido,
+        IReadOnlyCollection<Produto> produtos,
+        CancellationToken cancellationToken = default)
+    {
+        dbContext.AttachRange(produtos);
+        await dbContext.Pedidos.AddAsync(pedido, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task AddWithStockAsync(
         Pedido pedido,
         IReadOnlyCollection<Produto> produtos,

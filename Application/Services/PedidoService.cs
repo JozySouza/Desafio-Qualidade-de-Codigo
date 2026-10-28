@@ -89,19 +89,29 @@ public sealed class PedidoService(
             Itens = itensPedido
         };
 
-        await ProcessarPagamentoAsync(pedido, cancellationToken);
-
-        // Salva o pedido e a baixa de estoque na mesma transação.
-        await pedidoRepository.AddWithStockAsync(
+        // Registra o pedido antes de chamar o gateway de pagamento.
+        await pedidoRepository.AddPendingAsync(
             pedido,
             produtos,
             cancellationToken);
 
-        if (pedido.Status != StatusPedido.Pago)
+        // Assim, uma falha ao registrar o pedido não resulta em cobrança.
+        await ProcessarPagamentoAsync(pedido, cancellationToken);
+
+        if (pedido.Status == StatusPedido.Falhou)
         {
+            // Mantém a recusa registrada para permitir o reprocessamento.
+            await pedidoRepository.UpdateAsync(pedido, cancellationToken);
             return Mapear(pedido);
         }
 
+        // Persiste o pagamento aprovado e a baixa de estoque na mesma transação.
+        await pedidoRepository.UpdateWithStockAsync(
+            pedido,
+            produtos,
+            cancellationToken);
+
+        // A logística só recebe pedidos já persistidos como pagos.
         await EnviarParaLogisticaAsync(pedido, cancellationToken);
 
         return Mapear(pedido);
@@ -222,6 +232,7 @@ public sealed class PedidoService(
             return;
         }
 
+        // O estoque só é debitado após aprovação do pagamento.
         foreach (var item in itensPorProduto)
         {
             item.Produto.DebitarEstoque(item.Quantidade);
